@@ -1,10 +1,10 @@
 
 #include "colorspace.h"
 
-#define COLOR_0 'A'
-#define COLOR_1 'T'
-#define COLOR_2 'C'
-#define COLOR_3 'G'
+#define COLOR_0_BASE_ENCODED 'A'
+#define COLOR_1_BASE_ENCODED 'T'
+#define COLOR_2_BASE_ENCODED 'C'
+#define COLOR_3_BASE_ENCODED 'G'
 
 const int MAXLINE = 1024;
 
@@ -81,37 +81,82 @@ char dinucleotide_to_color(char n1, char n2) {
 	if (n1 == 'N') { n1 = 'A'; }
 	if (n2 == 'N') { n2 = 'A'; }
 	if (n1 == 'A' && n2 == 'A') {
-		color = COLOR_0;
+		color = COLOR_0_BASE_ENCODED;
 	} else if (n1 == 'A' && n2 == 'C') {
-		color = COLOR_1;
+		color = COLOR_1_BASE_ENCODED;
 	} else if (n1 == 'A' && n2 == 'G') {
-		color = COLOR_2;
+		color = COLOR_2_BASE_ENCODED;
 	} else if (n1 == 'A' && n2 == 'T') {
-		color = COLOR_3;
+		color = COLOR_3_BASE_ENCODED;
 	} else if (n1 == 'C' && n2 == 'A') {
-		color = COLOR_1;
+		color = COLOR_1_BASE_ENCODED;
 	} else if (n1 == 'C' && n2 == 'C') {
-		color = COLOR_0;
+		color = COLOR_0_BASE_ENCODED;
 	} else if (n1 == 'C' && n2 == 'G') {
-		color = COLOR_3;
+		color = COLOR_3_BASE_ENCODED;
 	} else if (n1 == 'C' && n2 == 'T') {
-		color = COLOR_2;
+		color = COLOR_2_BASE_ENCODED;
 	} else if (n1 == 'G' && n2 == 'A') {
-		color = COLOR_2;
+		color = COLOR_2_BASE_ENCODED;
 	} else if (n1 == 'G' && n2 == 'C') {
-		color = COLOR_3;
+		color = COLOR_3_BASE_ENCODED;
 	} else if (n1 == 'G' && n2 == 'G') {
-		color = COLOR_0;
+		color = COLOR_0_BASE_ENCODED;
 	} else if (n1 == 'G' && n2 == 'T') {
-		color = COLOR_1;
+		color = COLOR_1_BASE_ENCODED;
 	} else if (n1 == 'T' && n2 == 'A') {
-		color = COLOR_3;
+		color = COLOR_3_BASE_ENCODED;
 	} else if (n1 == 'T' && n2 == 'C') {
-		color = COLOR_2;
+		color = COLOR_2_BASE_ENCODED;
 	} else if (n1 == 'T' && n2 == 'G') {
-		color = COLOR_1;
+		color = COLOR_1_BASE_ENCODED;
 	} else if (n1 == 'T' && n2 == 'T') {
-		color = COLOR_0;
+		color = COLOR_0_BASE_ENCODED;
 	}
 	return color;
+}
+
+int  cs_fastq_to_base_encoding(char* input_fastq_filename, char* output_fastq_filename){
+	// open the input and output fastq files
+	fastq_file_t *input_fastq_file = fastq_fopen_mode(input_fastq_filename, "r");
+	fastq_file_t *output_fastq_file = fastq_fopen_mode(output_fastq_filename, "w");
+
+	// read every read from the input fastq file
+	fastq_read_t *input_read, *output_read;
+	char *bs_encoded_sequence;
+	while (fastq_fread(input_read, input_fastq_file)) {
+		cs_sequence_to_base_space_encoding(input_read->sequence, bs_encoded_sequence);
+		output_read = fastq_read_new(input_read->id, bs_encoded_sequence, input_read->quality);
+		fastq_fwrite(output_read, 1, output_fastq_file);
+		// TODO: borrar las reads, ¿es necesario?
+		fastq_read_free(output_read);
+		fastq_read_free(input_read);
+	}
+
+	// close the files
+	fastq_fclose(input_fastq_file);
+	fastq_fclose(output_fastq_file);
+}
+
+void cs_sequence_to_base_space_encoding(char* cs_sequence, char* bs_encoded_cs_sequence) {
+	int seq_length = strlen(cs_sequence) - 1;
+	int i;
+	for (i=0; i<seq_length-1; i++) {
+		bs_encoded_cs_sequence[i] = base_space_color_encoding(cs_sequence[i]);
+	}
+	bs_encoded_cs_sequence[i] = 0;
+}
+
+char base_space_color_encoding(char color) {
+	char base;
+	if (color == '0') {
+		base = COLOR_0_BASE_ENCODED;
+	} else if (color == '1') {
+		base = COLOR_1_BASE_ENCODED;
+	} else if (color == '2') {
+		base = COLOR_2_BASE_ENCODED;
+	} else if (color == '3') {
+		base = COLOR_3_BASE_ENCODED;
+	}
+	return base;
 }

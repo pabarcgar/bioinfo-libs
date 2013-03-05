@@ -6,7 +6,7 @@
 
 int main(int argc, char** argv) {
   if (argc < MIN_OPTIONS) {
-    printf("Usage: %s Dna_reference_Path Output_Filename\n", argv[0]);
+    printf("Usage: %s Dna_reference_Path Output_dir\n", argv[0]);
     //exit(-1);
     return -1;
   }
@@ -15,3 +15,4 @@ int main(int argc, char** argv) {
 
   fasta_to_colorspace(fasta_file_name, output_dir);
 }
+

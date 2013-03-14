@@ -64,7 +64,7 @@ char nucleotide_sequence_to_color_space(char last_nucleotide_of_line, char *nucl
 		colorspace_line[contador] = dinucleotide_to_color( last_nucleotide_of_line, nucleotide_line[0]);
 		contador ++;
 	}
-	int seq_length = strlen(nucleotide_line) - 1;
+	int seq_length = strlen(nucleotide_line);
 	int i;
 	for (i=0; i<seq_length-1; i++) {
 		colorspace_line[contador] = dinucleotide_to_color( nucleotide_line[i], nucleotide_line[i+1]);
@@ -72,6 +72,8 @@ char nucleotide_sequence_to_color_space(char last_nucleotide_of_line, char *nucl
 	}
 	colorspace_line[contador] = 0;
 	last_nucleotide_of_line = nucleotide_line[seq_length-1];
+
+	printf("lengths: nt = %i, cs = %i\n", strlen(nucleotide_line), strlen(colorspace_line));
 	return last_nucleotide_of_line;
 }
 
@@ -113,6 +115,7 @@ char dinucleotide_to_color(char n1, char n2) {
 	} else if (n1 == 'T' && n2 == 'T') {
 		color = COLOR_0_BASE_ENCODED;
 	}
+
 	return color;
 }
 
@@ -124,15 +127,17 @@ int  cs_fastq_to_base_encoding(char* input_fastq_filename, char* output_fastq_fi
 
 	// read every read from the input fastq file
 	printf("Reading sequences from input fastq file ...\n");
-	fastq_read_t *input_read = fastq_read_new("","",""),
-				 *output_read;
+	fastq_read_t fq_read;
+
 	char bs_encoded_sequence[MAXLINE];
-	while (fastq_fread(input_read, input_fastq_file)) {
-		cs_sequence_to_base_space_encoding(input_read->sequence, bs_encoded_sequence);
-		output_read = fastq_read_new(input_read->id, bs_encoded_sequence, input_read->quality);
-		fastq_fwrite(output_read, 1, output_fastq_file);
-		// TODO: borrar las reads, ¿es necesario?
-		//fastq_read_free(output_read);
+	while (fastq_fread(&fq_read, input_fastq_file)) {
+		cs_sequence_to_base_space_encoding(fq_read.sequence);
+		fastq_fwrite(&fq_read, 1, output_fastq_file);
+
+		// free memory
+		if (fq_read.id != NULL) free(fq_read.id);
+		if (fq_read.sequence != NULL) free(fq_read.sequence);
+		if (fq_read.quality != NULL) free(fq_read.quality);
 	}
 
 	// close the files
@@ -141,14 +146,14 @@ int  cs_fastq_to_base_encoding(char* input_fastq_filename, char* output_fastq_fi
 	fastq_fclose(output_fastq_file);
 }
 
-void cs_sequence_to_base_space_encoding(char* cs_sequence, char* bs_encoded_cs_sequence) {
+void cs_sequence_to_base_space_encoding(char* cs_sequence) {
 	// transform the encoding of each char in the input sequence
 	int seq_length = strlen(cs_sequence);
 	int i;
 	for (i=0; i<seq_length; i++) {
-		bs_encoded_cs_sequence[i] = base_space_color_encoding(cs_sequence[i]);
+		cs_sequence[i] = base_space_color_encoding(cs_sequence[i]);
 	}
-	bs_encoded_cs_sequence[i] = 0;
+	cs_sequence[i] = 0;
 }
 
 char base_space_color_encoding(char color) {

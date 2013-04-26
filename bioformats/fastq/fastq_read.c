@@ -13,9 +13,11 @@ fastq_read_t *fastq_read_new(char *id, char *sequence, char *quality) {
 	fq_read->id = strdup(id);
 	//printf("%s\n", sequence);
 	fq_read->sequence = strdup(sequence);
+	fq_read->full_sequence = fq_read->sequence;
 	//fq_read->sequence = strndup(sequence, seq_length + 1);
 	//printf("%s\n", fq_read->sequence);
 	fq_read->quality = strdup(quality);
+	fq_read->full_quality = fq_read->quality;
 	fq_read->length = seq_length;
 
 	return fq_read;
@@ -58,9 +60,10 @@ void fastq_read_free(fastq_read_t *fq_read) {
 	if (fq_read == NULL) return;
 
 	if (fq_read->id != NULL) free(fq_read->id);
-	if (fq_read->sequence != NULL) free(fq_read->sequence);
-	if (fq_read->quality != NULL) free(fq_read->quality);
-
+	//if (fq_read->sequence != NULL) free(fq_read->sequence-2);
+	if (fq_read->full_sequence != NULL) free(fq_read->full_sequence);
+	//if (fq_read->quality != NULL) free(fq_read->quality-1);
+	if (fq_read->full_quality != NULL) free(fq_read->full_quality);
 	free(fq_read);
 }
 

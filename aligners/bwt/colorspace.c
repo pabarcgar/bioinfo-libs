@@ -73,7 +73,7 @@ char nucleotide_sequence_to_color_space(char last_nucleotide_of_line, char *nucl
 	colorspace_line[contador] = 0;
 	last_nucleotide_of_line = nucleotide_line[seq_length-1];
 
-	printf("lengths: nt = %i, cs = %i\n", strlen(nucleotide_line), strlen(colorspace_line));
+	//printf("lengths: nt = %i, cs = %i\n", strlen(nucleotide_line), strlen(colorspace_line));
 	return last_nucleotide_of_line;
 }
 
@@ -168,4 +168,19 @@ char base_space_color_encoding(char color) {
 		base = COLOR_3_BASE_ENCODED;
 	}
 	return base;
+}
+
+char adapter_to_nucleotide(char adapter, char color) {
+	// TODO: funcion de prueba, solo se incluye el adaptador T
+	char nucleotide;
+	if (adapter == 'T' && color == '0') {
+		nucleotide = 'T';
+	} else if (adapter == 'T' && color == '1') {
+		nucleotide = 'G';
+	} else if (adapter == 'T' && color == '2') {
+		nucleotide = 'C';
+	} else if (adapter == 'T' && color == '3') {
+		nucleotide = 'A';
+	}
+	return nucleotide;
 }

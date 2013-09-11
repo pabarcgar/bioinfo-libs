@@ -8,7 +8,7 @@
 
 const int MAXLINE = 1024;
 
-int  fasta_to_colorspace(char* fasta_filename, char* output_dir){
+int  fasta_to_colorspace(char* fasta_filename, char* output_filename){
 	// open the input fasta file
 	FILE *input_fasta_file = fopen(fasta_filename, "r");
 	if (input_fasta_file == NULL) {
@@ -16,19 +16,8 @@ int  fasta_to_colorspace(char* fasta_filename, char* output_dir){
 		return -1;
 	}
 	
-	// create output directory, if necessary
-	if (!exists(output_dir)) {
-		printf("El directorio '%s' no existe. Creando directorio ...\n", output_dir);
-		create_directory(output_dir);
-	} else {
-		printf("El directorio '%s' ya existe, no es necesario volver a crearlo.\n", output_dir);
-	}
-	output_dir = strcat(output_dir, "/");
-
 	// fichero de salida
-	char *output_file_name = strcat(output_dir, fasta_filename);
-	printf("Output file name: %s\n", output_file_name);
-	FILE *output_fasta_file = fopen(output_file_name, "w");
+	FILE *output_fasta_file = fopen(output_filename, "w");
 
 	char line[MAXLINE];
 	long num_lineas = 0;
@@ -42,15 +31,11 @@ int  fasta_to_colorspace(char* fasta_filename, char* output_dir){
 		} else {
 			last_nucleotide_of_line = nucleotide_sequence_to_color_space(last_nucleotide_of_line, line, colorspace_line);
 			fprintf(output_fasta_file, "%s\n", colorspace_line);
-			//fputs(colorspace_line, output_fasta_file);
-			//free(colorspace_line);
 		}
 		num_lineas++;
 	}
 	fclose(input_fasta_file);
 	fclose(output_fasta_file);
-
-	printf("Numero de lineas leidas: %ld\n", num_lineas);
 
 	return 0;
 }
@@ -60,7 +45,7 @@ char nucleotide_sequence_to_color_space(char last_nucleotide_of_line, char *nucl
 	int contador = 0;
 	//colorspace_line = malloc(MAXLINE);
 	if (last_nucleotide_of_line != NULL) {
-		//printf("Primera linea del fasta\n");
+		// first fasta line
 		colorspace_line[contador] = dinucleotide_to_color( last_nucleotide_of_line, nucleotide_line[0]);
 		contador ++;
 	}
@@ -71,9 +56,10 @@ char nucleotide_sequence_to_color_space(char last_nucleotide_of_line, char *nucl
 		contador++;
 	}
 	colorspace_line[contador] = 0;
-	last_nucleotide_of_line = nucleotide_line[seq_length-1];
+	// TODO: ¿cual de estas lineas esta bien?
+	last_nucleotide_of_line = nucleotide_line[seq_length-2];
+	//last_nucleotide_of_line = nucleotide_line[seq_length-1];
 
-	//printf("lengths: nt = %i, cs = %i\n", strlen(nucleotide_line), strlen(colorspace_line));
 	return last_nucleotide_of_line;
 }
 
@@ -170,17 +156,17 @@ char base_space_color_encoding(char color) {
 	return base;
 }
 
-char adapter_to_nucleotide(char adapter, char color) {
-	// TODO: funcion de prueba, solo se incluye el adaptador T
-	char nucleotide;
-	if (adapter == 'T' && color == '0') {
-		nucleotide = 'T';
-	} else if (adapter == 'T' && color == '1') {
-		nucleotide = 'G';
-	} else if (adapter == 'T' && color == '2') {
-		nucleotide = 'C';
-	} else if (adapter == 'T' && color == '3') {
-		nucleotide = 'A';
+char adapter_to_nucleotide(char base, char first_color) {
+	char first_nucleotide;
+	// TODO: esto hay que implementarlo para todos los adaptadores
+	if (base == 'T' && first_color == '0') {
+		first_nucleotide = 'T';
+	} else if (base == 'T' && first_color == '1') {
+		first_nucleotide = 'G';
+	} else if (base == 'T' && first_color == '2') {
+		first_nucleotide = 'C';
+	} else if (base == 'T' && first_color == '3') {
+		first_nucleotide = 'A';
 	}
-	return nucleotide;
+	return first_nucleotide;
 }

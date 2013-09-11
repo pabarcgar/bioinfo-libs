@@ -156,7 +156,7 @@ char base_space_color_encoding(char color) {
 	return base;
 }
 
-char adapter_to_nucleotide(char base, char first_color) {
+char cs_adapter_to_nucleotide(char base, char first_color) {
 	char first_nucleotide;
 	// TODO: esto hay que implementarlo para todos los adaptadores
 	if (base == 'T' && first_color == '0') {

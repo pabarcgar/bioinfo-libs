@@ -170,7 +170,7 @@ typedef struct bwt_index {
   char *dirname;
 } bwt_index_t;
 
-bwt_index_t *bwt_index_new(const char *dirname);
+bwt_index_t *bwt_index_new(const char *dirname, int colorspace);
 void bwt_index_free(bwt_index_t *index);
 
 

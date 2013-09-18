@@ -563,7 +563,7 @@ size_t alignments_filter(char report_all,
 
 //-----------------------------------------------------------------------------
 
-bwt_index_t *bwt_index_new(const char *dirname) {
+bwt_index_t *bwt_index_new(const char *dirname, int colorspace) {
 
   bwt_index_t *index = (bwt_index_t*) calloc(1, sizeof(bwt_index_t));
 
@@ -574,16 +574,24 @@ bwt_index_t *bwt_index_new(const char *dirname) {
   readCompMatrix(&index->h_O, dirname, "O");
   readUIntCompVector(&index->S, dirname, "Scomp");
 
-  reverseStrandC(&index->h_rC, &index->h_C,
-  		 &index->h_rC1, &index->h_C1);
-
-  reverseStrandO(&index->h_rO, &index->h_O);
+  if (colorspace) {
+	  index->h_rC = index->h_C;
+	  index->h_rC1 = index->h_C1;
+	  index->h_rO = index->h_O;
+  } else {
+	  reverseStrandC(&index->h_rC, &index->h_C,
+			  &index->h_rC1, &index->h_C1);
+	  reverseStrandO(&index->h_rO, &index->h_O);
+  }
 
   // 1-error handling 
   readCompMatrix(&index->h_Oi, dirname, "Oi");
   readUIntCompVector(&index->Si, dirname, "Scompi");
-
-  reverseStrandO(&index->h_rOi, &index->h_Oi);
+  if (colorspace) {
+	  index->h_rOi = index->h_Oi;
+  } else {
+	  reverseStrandO(&index->h_rOi, &index->h_Oi);
+  }
 
   // load karyotype
   char path[strlen(dirname) + 512];

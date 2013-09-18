@@ -26,7 +26,7 @@ void main(int argc, char *argv[]) {
 
   bwt_optarg_t *bwt_optarg = bwt_optarg_new(num_errors, 1, 10000, 1, 0, 0);
   //printf("Loading genome...\n");
-  bwt_index_t *bwt_index = bwt_index_new(index_dirname);
+  bwt_index_t *bwt_index = bwt_index_new(index_dirname, 0);
   //printf("Loading done!\n");
     
 

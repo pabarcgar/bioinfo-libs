@@ -20,7 +20,9 @@ char *get_field_value_in_info(const char *field, char *info) {
     
     // Search for field in info (must begin with '<field>=')
     token = strtok_r(info, ";", &save_strtok);
-    while (token != NULL && !starts_with(token, field) && strlen(token) > strlen(field)+1 && token[strlen(field)] == '=') {
+    while (token != NULL && 
+	   (!starts_with(token, field) || // Field is completely different than the requested one
+	   (strlen(token) > strlen(field) && token[strlen(field)] != '='))) { // Same beginning, but longer than the requested one
         token = strtok_r(NULL, ";", &save_strtok);
     }
     
@@ -70,13 +72,14 @@ char *get_field_value_in_sample(char *sample, int position) {
     return token;
 }
 
-int get_alleles(char* sample, int genotype_position, int* allele1, int* allele2) {
+enum alleles_code get_alleles(char* sample, int genotype_position, int* allele1, int* allele2) {
     assert(sample);
     assert(allele1);
     assert(allele2);
     
     char *aux_buffer, *allele, *genotype;
-    int ret_code = 0, cur_pos = -1;
+    enum alleles_code ret_code = ALLELES_OK;
+    int cur_pos = -1;
     
     // If the sample is not in a form that can contain a genotype, mark both alleles as missing
     if (strnlen(sample, 3) < 3) {
@@ -99,17 +102,23 @@ int get_alleles(char* sample, int genotype_position, int* allele1, int* allele2)
     allele = strtok_r(genotype, "/|", &aux_buffer);
     if (strcmp(".", allele) == 0) {
         *allele1 = -1;
-        ret_code += 1;
+        ret_code = FIRST_ALLELE_MISSING;
     } else {
         *allele1 = atoi(allele);
     }
     
 //     LOG_DEBUG_F("allele 1 = %s\n", allele);
     
+    if (strlen(aux_buffer) == 0) { // Haploid
+        *allele2 = -1;
+        ret_code = HAPLOID;
+        return ret_code;
+    }
+    
     allele = strtok_r(NULL, "/|", &aux_buffer);
     if (strcmp(".", allele) == 0) {
         *allele2 = -1;
-        ret_code += 2;
+        ret_code = (ret_code == FIRST_ALLELE_MISSING) ? ALL_ALLELES_MISSING : SECOND_ALLELE_MISSING;
     } else {
         *allele2 = atoi(allele);
     }

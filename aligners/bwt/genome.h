@@ -7,8 +7,8 @@
 #include <math.h>
 #include <sys/stat.h>
 
-#include "cprops/hashtable.h"
 #include "commons/log.h"
+#include "containers/cprops/hashtable.h"
 
 //====================================================================================
 //  structures and prototypes
@@ -17,11 +17,11 @@
 typedef struct genome {
   size_t genome_length;
   unsigned int num_chromosomes;
-  size_t chr_name_length[200];
-  size_t chr_size[200];
-  size_t chr_offset[200];
-  char chr_name[200][100];
+  size_t *chr_name_length;
+  size_t *chr_size;
+  size_t *chr_offset;
   unsigned char* X;
+  char **chr_name;
   char **code_table;
 } genome_t;
 

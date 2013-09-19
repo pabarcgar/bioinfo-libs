@@ -15,9 +15,11 @@
 #include <commons/string_utils.h>
 
 typedef struct region {
-	uint32_t start_position;
-	uint32_t end_position;
-	char *chromosome;
+    size_t start_position;
+    size_t end_position;
+    char *chromosome;
+    char *strand;
+    char *type;
 } region_t;
 
 typedef struct {
@@ -25,7 +27,7 @@ typedef struct {
     size_t length;
 } chromosome_ws_response;
 
-region_t *region_new(char *chromosome, uint32_t start_position, uint32_t end_position);
+region_t *region_new(char *chromosome, size_t start_position, size_t end_position, char *strand, char *type);
 
 void region_free(region_t *region);
 
@@ -82,7 +84,7 @@ int compare_chromosomes(char *chromosome_1, char *chromosome_2, char **chromosom
  * @return
  * 	Less, equal or greater than zero if position_1 is less than, equal or greater than position_2.
  */
-int compare_positions(uint32_t position_1, uint32_t position_2);
+int compare_positions(size_t position_1, size_t position_2);
 
 /**
  * Compare two regions' position ranges.

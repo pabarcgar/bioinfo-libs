@@ -5,19 +5,16 @@
  * Individual management functions
  */
 
-individual_t *individual_new(char *id, float phenotype, enum Sex sex, enum Condition condition, individual_t *father, individual_t *mother, family_t *family) {
+individual_t *individual_new(char *id, float variable, enum Sex sex, enum Condition condition, individual_t *father, individual_t *mother, family_t *family) {
     individual_t *individual = (individual_t*) malloc (sizeof(individual_t));
-    individual_init(id, phenotype, sex, condition, father, mother, family, individual);
+    individual_init(id, variable, sex, condition, father, mother, family, individual);
     return individual;
 }
 
-void individual_init(char *id, float phenotype, enum Sex sex, enum Condition condition, individual_t *father, individual_t *mother, family_t *family, individual_t *individual) {
-    if (individual == NULL) {
-        return;
-    }
-    
+void individual_init(char *id, float variable, enum Sex sex, enum Condition condition, individual_t *father, individual_t *mother, family_t *family, individual_t *individual) {
+    assert(individual);
     individual->id = id;
-    individual->phenotype = phenotype;
+    individual->variable = variable;
     individual->condition = condition;
     individual->sex = sex;
     individual->father = father;
@@ -26,10 +23,7 @@ void individual_init(char *id, float phenotype, enum Sex sex, enum Condition con
 }
 
 void individual_free(individual_t *individual) {
-    if (individual == NULL) {
-        return;
-    }
-    
+    assert(individual);
     free(individual->id);
     free(individual);
 }
@@ -59,16 +53,9 @@ int individual_compare(individual_t *a, individual_t *b) {
 family_t *family_new(char *id) {
     family_t *family = (family_t*) calloc (1, sizeof(family_t));
     family->id = id;
-    family->children = cp_list_create_list(COLLECTION_MODE_DEEP,
-                                           (cp_compare_fn) individual_compare,
-                                           NULL,
-                                           (cp_destructor_fn) individual_free
-                                          );
-    family->unknown = cp_list_create_list(COLLECTION_MODE_DEEP,
-                                           (cp_compare_fn) individual_compare,
-                                           NULL,
-                                           (cp_destructor_fn) individual_free
-                                          );
+    family->children = linked_list_new(COLLECTION_MODE_ASYNCHRONIZED);
+    family->unknown = linked_list_new(COLLECTION_MODE_ASYNCHRONIZED);
+    
     return family;
 }
 
@@ -116,8 +103,8 @@ int family_add_child(individual_t *child, family_t *family) {
     }
     
     assert(family->children);
-    void *ret = cp_list_insert(family->children, child);
-    return ret == NULL;
+    
+    return linked_list_insert(child, family->children) == 0;
 }
 
 int family_add_unknown(individual_t *individual, family_t *family) {
@@ -132,19 +119,23 @@ int family_add_unknown(individual_t *individual, family_t *family) {
     }
     
     assert(family->unknown);
-    void *ret = cp_list_insert(family->unknown, individual);
-    return ret == NULL;
+    
+    return linked_list_insert(individual, family->unknown) == 0;
 }
 
 void family_free(family_t *family) {
-    if (family == NULL) {
-        return;
-    }
+    assert(family);
     
     free(family->id);
-    individual_free(family->father);
-    individual_free(family->mother);
-    cp_list_destroy(family->children);
+    if (family->father) { individual_free(family->father); }
+    if (family->mother) { individual_free(family->mother); }
+    
+    void *free_func = family->children->size ? individual_free : NULL;
+    linked_list_free(family->children, free_func);
+    
+    free_func = family->unknown->size ? individual_free : NULL;
+    linked_list_free(family->unknown, free_func);
+    free(family);
 }
 
 individual_t *family_contains_individual(individual_t *individual, family_t *family) {
@@ -157,27 +148,29 @@ individual_t *family_contains_individual(individual_t *individual, family_t *fam
         return family->mother;
     }
     
-    cp_list_iterator *iterator = cp_list_create_iterator(family->children, COLLECTION_LOCK_READ);
+    linked_list_iterator_t *iterator = linked_list_iterator_new(family->children);
     individual_t *child = NULL;
-    while ((child = cp_list_iterator_next(iterator)) != NULL) {
+    while (child = linked_list_iterator_curr(iterator)) {
         if (individual_compare(individual, child) == 0) {
             LOG_DEBUG_F("Individual %s:%s found as child\n", family->id, individual->id);
-            cp_list_iterator_destroy(iterator);
+            linked_list_iterator_free(iterator);
             return child;
         }
+        linked_list_iterator_next(iterator);
     }
-    cp_list_iterator_destroy(iterator);
+    linked_list_iterator_free(iterator);
     
-    iterator = cp_list_create_iterator(family->unknown, COLLECTION_LOCK_READ);
+    iterator = linked_list_iterator_new(family->unknown);
     individual_t *unknown = NULL;
-    while ((unknown = cp_list_iterator_next(iterator)) != NULL) {
+    while (unknown = linked_list_iterator_curr(iterator)) {
         if (individual_compare(individual, unknown) == 0) {
             LOG_DEBUG_F("Individual %s:%s found as unknown member\n", family->id, individual->id);
-            cp_list_iterator_destroy(iterator);
+            linked_list_iterator_free(iterator);
             return unknown;
         }
+        linked_list_iterator_next(iterator);
     }
-    cp_list_iterator_destroy(iterator);
+    linked_list_iterator_free(iterator);
     
     return NULL;
 }

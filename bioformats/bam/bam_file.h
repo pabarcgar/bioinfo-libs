@@ -12,13 +12,14 @@
   #include <thrust/copy.h>
 #endif 
 
-
-#include "bam.h"
-
 #include "commons/commons.h"
 #include "commons/file_utils.h"
 #include "commons/string_utils.h"
 #include "commons/system_utils.h"
+
+#include "containers/array_list.h"
+
+#include "samtools/bam.h"
 
 #include "alignment.h"
 //#include "bam_commons.h"
@@ -180,6 +181,8 @@ bam_header_t* bam_fread_temporary_header();
 *  Writes a bam1_t alignment to a BAM file
 */
 int bam_fwrite(bam1_t* alignment_p, bam_file_t* bam_file_p);
+
+int bam_fwrite_bam1s(array_list_t* bam1s, bam_file_t* bam_file);
 
 /**
 *  @brief Writes an array of bam1_t alignments to a BAM file

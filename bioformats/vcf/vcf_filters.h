@@ -9,12 +9,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <cprops/heap.h>
+#include <commons/log.h>
 
-#include <bioformats/features/region/region_table_utils.h>
 #include <containers/array_list.h>
 #include <containers/list.h>
-#include <commons/log.h>
+#include <containers/cprops/heap.h>
+
+#include <bioformats/features/region/region_table_utils.h>
 
 #include "vcf_file_structure.h"
 #include "vcf_stats.h"
@@ -34,11 +35,13 @@
 /**
  * @brief The type of the filter to apply
  **/
-enum filter_type { COVERAGE, MAF, MISSING_VALUES, NUM_ALLELES, QUALITY, REGION, SNP  };
+enum filter_type { COVERAGE, MAF, MISSING_VALUES, NUM_ALLELES, QUALITY, REGION, SNP, INDEL, VARIANT_TYPE, INHERITANCE_PATTERN };
+
+enum inheritance_pattern { DOMINANT, RECESSIVE };
 
 /**
- * @brief Arguments for the filter by coverage
- * @details The only argument of a filter by coverage is the minimum coverage of a record, as specified 
+ * @brief Arguments for the filter by coverage 
+* @details The only argument of a filter by coverage is the minimum coverage of a record, as specified 
  * on its INFO field.
  **/
 typedef struct {
@@ -47,10 +50,10 @@ typedef struct {
 
 /**
  * @brief Arguments for the filter by Minumum Allele Frequency (MAF)
- * @details The only argument of a filter by MAF is the maximum MAF of a record.
+ * @details The only argument of the filter is the MAF of a record.
  **/
 typedef struct {
-    float max_maf;      /**< Maximum MAF a record must have */
+    float min_maf;      /**< Minumum Allele Frequency (MAF) a record must have */
 } maf_filter_args;
 
 /**
@@ -81,10 +84,12 @@ typedef struct {
 /**
  * @brief Arguments for the filter by region
  * @details The argument of a filter by region is a set of one or more regions of the form 
- * chromosome:position:ref_allele:alt_allele.
+ * chromosome:position:ref_allele:alt_allele. Optionally, a specific type can be chosen, and it will 
+ * restrict the query to those regions that match that type.
  **/
 typedef struct {
     region_table_t *regions;    /**< Region(s) where a record must be placed */
+    char *type;                 /**< Type of the regions where a record must be placed */
 } region_filter_args;
 
 /**
@@ -96,8 +101,35 @@ typedef struct {
 } snp_filter_args;
 
 /**
- * @brief A filter selects a subcollection of records which fulfill some condition.
- * @details A filter selects a subcollection of records which fulfill some condition.
+ * @brief Arguments for the filter by indel (insertion/deletion)
+ * @details The only argument of a filter by indel specifies whether to include or exclude an indel.
+ **/
+typedef struct {
+    int include_indels;   /**< Whether to include (1) or exclude (0) an indel */
+} indel_filter_args;
+
+/**
+ * @brief Arguments for the filter by variant type (SNV, INDEL or SV)
+ * @details The only argument of a filter by variant type is the type itself
+ */
+typedef struct {
+    enum structural_variation_type type;
+} variant_type_filter_args;
+
+/**
+ * @brief Arguments for the filter by percentage of samples following an inheritance pattern
+ * @details The arguments of a filter by inheritance pattern are the pattern itself and the 
+ * percentage of samples that must follow it.
+ **/
+typedef struct {
+    enum inheritance_pattern pattern;
+    float min_following_pattern;      /**< Minimum percentage of samples that must follow the inheritance model */
+} inheritance_pattern_filter_args;
+
+
+/**
+ * @brief A filter selects a subset of records that fulfill some condition.
+ * @details A filter selects a subset of records that fulfill some condition.
  * It is mandatory to provide the list of records to filter and a list to store in 
  * the records that failed the filter's test.
  * 
@@ -108,7 +140,7 @@ typedef struct filter {
     enum filter_type type;  /**< Filtering criteria */
     char name[16];          /**< Name (header metadata and FILTER value) */
     char description[64];   /**< Description (header metadata) */
-    array_list_t* (*filter_func) (array_list_t *input_records, array_list_t *failed, char *filter_name, void *args);  /**< Filtering function itself */
+    array_list_t* (*filter_func) (array_list_t *input_records, array_list_t *failed, variant_stats_t **input_stats, char *filter_name, void *args);  /**< Filtering function itself */
     void (*free_func) (struct filter *f);   /**< Filter deallocation function */
     void *args;             /**< Filter-dependant arguments */
 } filter_t;
@@ -133,7 +165,7 @@ typedef cp_heap filter_chain;
  * @param args Filter arguments
  * @return Records that passed the filter's test
  */
-array_list_t *coverage_filter(array_list_t *input_records, array_list_t *failed, char *filter_name, void *args);
+array_list_t *coverage_filter(array_list_t *input_records, array_list_t *failed, variant_stats_t **input_stats, char *filter_name, void *args);
 
 /**
  * @brief Given a list of records, check which ones have a MAF less or equals to the one specified.
@@ -144,7 +176,7 @@ array_list_t *coverage_filter(array_list_t *input_records, array_list_t *failed,
  * @param args Filter arguments
  * @return Records that passed the filter's test
  */
-array_list_t *maf_filter(array_list_t *input_records, array_list_t *failed, char *filter_name, void *args);
+array_list_t *maf_filter(array_list_t *input_records, array_list_t *failed, variant_stats_t **input_stats, char *filter_name, void *args);
 
 /**
  * @brief Given a list of records, check which ones have a percentage of missing values less or equals to the one specified.
@@ -155,7 +187,7 @@ array_list_t *maf_filter(array_list_t *input_records, array_list_t *failed, char
  * @param args Filter arguments
  * @return Records that passed the filter's test
  */
-array_list_t *missing_values_filter(array_list_t *input_records, array_list_t *failed, char *filter_name, void *args);
+array_list_t *missing_values_filter(array_list_t *input_records, array_list_t *failed, variant_stats_t **input_stats, char *filter_name, void *args);
 
 /**
  * @brief Given a list of records, check which ones have a num_alleles equals to the one specified.
@@ -166,7 +198,7 @@ array_list_t *missing_values_filter(array_list_t *input_records, array_list_t *f
  * @param args Filter arguments
  * @return Records that passed the filter's test
  */
-array_list_t *num_alleles_filter(array_list_t *input_records, array_list_t *failed, char *filter_name, void *args);
+array_list_t *num_alleles_filter(array_list_t *input_records, array_list_t *failed, variant_stats_t **input_stats, char *filter_name, void *args);
 
 /**
  * @brief Given a list of records, check which ones have a quality greater or equals to the one specified.
@@ -177,7 +209,7 @@ array_list_t *num_alleles_filter(array_list_t *input_records, array_list_t *fail
  * @param args Filter arguments
  * @return Records that passed the filter's test
  */
-array_list_t *quality_filter(array_list_t *input_records, array_list_t *failed, char *filter_name, void *args);
+array_list_t *quality_filter(array_list_t *input_records, array_list_t *failed, variant_stats_t **input_stats, char *filter_name, void *args);
 
 /**
  * @brief Given a list of records, check which ones are positioned in certain genome region.
@@ -190,7 +222,7 @@ array_list_t *quality_filter(array_list_t *input_records, array_list_t *failed, 
  * @param args Filter arguments
  * @return Records that passed the filter's test
  */
-array_list_t *region_filter(array_list_t *input_records, array_list_t *failed, char *filter_name, void *args);
+array_list_t *region_filter(array_list_t *input_records, array_list_t *failed, variant_stats_t **input_stats, char *filter_name, void *args);
 
 /**
  * @brief Given a list of records, check which ones represent a SNP.
@@ -201,7 +233,40 @@ array_list_t *region_filter(array_list_t *input_records, array_list_t *failed, c
  * @param args Filter arguments
  * @return Records that passed the filter's test
  */
-array_list_t *snp_filter(array_list_t *input_records, array_list_t *failed, char *filter_name, void *args);
+array_list_t *snp_filter(array_list_t *input_records, array_list_t *failed, variant_stats_t **input_stats, char *filter_name, void *args);
+
+/**
+ * @brief Given a list of records, check which ones represent an indel.
+ * @details Given a list of records, check which ones represent an indel.
+ * 
+ * @param input_records List of records to filter
+ * @param[out] failed Records that failed the filter's test
+ * @param args Filter arguments
+ * @return Records that passed the filter's test
+ */
+array_list_t *indel_filter(array_list_t *input_records, array_list_t *failed, variant_stats_t **input_stats, char *filter_name, void *args);
+
+/**
+ * @brief Given a list of records, check which ones have the specified type.
+ * @details Given a list of records, check which ones have the specified type (SNV, INDEL or SV).
+ * 
+ * @param input_records List of records to filter
+ * @param[out] failed Records that failed the filter's test
+ * @param args Filter arguments
+ * @return Records that passed the filter's test
+ */
+array_list_t *variant_type_filter(array_list_t *input_records, array_list_t *failed, variant_stats_t **input_stats, char *filter_name, void *args);
+
+/**
+ * @brief Given a list of records, check which ones follow an inheritance pattern.
+ * @details Given a list of records, check which ones follow an inheritance pattern (dominant or recessive).
+ * 
+ * @param input_records List of records to filter
+ * @param[out] failed Records that failed the filter's test
+ * @param args Filter arguments
+ * @return Records that passed the filter's test
+ */
+array_list_t *inheritance_pattern_filter(array_list_t *input_records, array_list_t *failed, variant_stats_t **input_stats, char *filter_name, void *args);
 
 
 //====================================================================================
@@ -227,17 +292,17 @@ void coverage_filter_free(filter_t *filter);
 
 
 /**
- * @brief Creates a new filter by maximum MAF.
- * @details Creates a new filter by maximum MAF.
+ * @brief Creates a new filter by MAF.
+ * @details Creates a new filter by MAF.
  *
- * @param max_maf Maximum MAF for the records to pass the filter
+ * @param max_maf MAF of the records that pass the filter
  * @return The new filter
  **/
-filter_t *maf_filter_new(float max_maf);
+filter_t *maf_filter_new(float min_maf);
 
 /**
- * @brief Deallocates memory of a filter by maximum MAF.
- * @details Deallocates memory of a filter by maximum MAF.
+ * @brief Deallocates memory of a filter by MAF.
+ * @details Deallocates memory of a filter by MAF.
  *
  * @param filter The filter to deallocate
  **/
@@ -304,12 +369,14 @@ void quality_filter_free(filter_t *filter);
  *
  * @param region_descriptor List of regions or filename where to extract the list from
  * @param use_region_file Whether to use a file containing regions
+ * @param type Within the list of regions to match, choose only the ones with this type
  * @param url URL of the web service to check for chromosomes order
  * @param species Species against the filter is applied
  * @param version Version of the web service to check for chromosome order
  * @return The new filter
  **/
-filter_t *region_filter_new(char *region_descriptor, int use_region_file, const char *url, const char *species, const char *version);
+filter_t *region_filter_new(char *region_descriptor, int use_region_file, char *type,
+                            const char *url, const char *species, const char *version);
 
 /**
  * @brief Creates a new filter by region(s), considering them as exact positions.
@@ -317,12 +384,14 @@ filter_t *region_filter_new(char *region_descriptor, int use_region_file, const 
  *
  * @param region_descriptor List of regions or filename where to extract the list from
  * @param use_region_file Whether to use a file containing regions
+ * @param type Within the list of regions to match, choose only the ones with this type
  * @param url URL of the web service to check for chromosomes order
  * @param species Species against the filter is applied
  * @param version Version of the web service to check for chromosome order
  * @return The new filter
  **/
-filter_t *region_exact_filter_new(char *region_descriptor, int use_region_file, const char *url, const char *species, const char *version);
+filter_t *region_exact_filter_new(char *region_descriptor, int use_region_file, char *type, 
+                                  const char *url, const char *species, const char *version);
 
 /**
  * @brief Deallocates memory of a filter by region(s).
@@ -332,18 +401,19 @@ filter_t *region_exact_filter_new(char *region_descriptor, int use_region_file, 
  **/
 void region_filter_free(filter_t *filter);
 
+
 /**
  * @brief Creates a new filter by gene(s), considering them as regions.
  * @details Creates a new filter by gene(s), considering them as regions.
  *
- * @param region_descriptor List of regions where to extract the list from
- * @param use_region_file Whether to use a file containing regions
+ * @param gene_descriptor List of genes where to extract the list from
+ * @param use_gene_file Whether to use a file containing genes
  * @param url URL of the web service to check for chromosomes order
  * @param species Species against the filter is applied
  * @param version Version of the web service to check for chromosome order
  * @return The new filter
  **/
-filter_t *gene_filter_new(char *region_descriptor, int use_region_file, const char *url, const char *species, const char *version);
+filter_t *gene_filter_new(char *gene_descriptor, int use_gene_file, const char *url, const char *species, const char *version);
 
 /**
  * @brief Deallocates memory of a filter by gene(s).
@@ -352,6 +422,7 @@ filter_t *gene_filter_new(char *region_descriptor, int use_region_file, const ch
  * @param filter The filter to deallocate
  **/
 void gene_filter_free(filter_t *filter);
+
 
 /**
  * @brief Creates a new filter by SNP.
@@ -369,6 +440,61 @@ filter_t *snp_filter_new(int include_snps);
  * @param filter The filter to deallocate
  **/
 void snp_filter_free(filter_t *filter);
+
+
+/**
+ * @brief Creates a new filter by indel.
+ * @details Creates a new filter by indel.
+ *
+ * @param include_indels Whether to include or exclude an indel.
+ * @return The new filter
+ **/
+filter_t *indel_filter_new(int include_indels);
+
+/**
+ * @brief Deallocates memory of a filter by indel.
+ * @details Deallocates memory of a filter by indel.
+ *
+ * @param filter The filter to deallocate
+ **/
+void indel_filter_free(filter_t *filter);
+
+
+/**
+ * @brief Creates a new filter by variant type.
+ * @details Creates a new filter by variant type.
+ *
+ * @param type The type of variant
+ * @return The new filter
+ **/
+filter_t *variant_type_filter_new(enum variant_type type);
+
+/**
+ * @brief Deallocates memory of a filter by variant type.
+ * @details Deallocates memory of a filter by variant type.
+ *
+ * @param filter The filter to deallocate
+ **/
+void variant_type_filter_free(filter_t *filter);
+
+
+/**
+ * @brief Creates a new filter by minimum percentage of samples following an inheritance pattern.
+ * @details Creates a new filter by minimum percentage of samples following an inheritance pattern.
+ *
+ * @param pattern Inheritance pattern the samples must follow
+ * @param min_following_pattern Minimum percentage of samples following the inheritance pattern
+ * @return The new filter
+ **/
+filter_t *inheritance_pattern_filter_new(enum inheritance_pattern pattern, float min_following_pattern);
+
+/**
+ * @brief Deallocates memory of a filter by inheritance pattern.
+ * @details Deallocates memory of a filter by inheritance pattern.
+ *
+ * @param filter The filter to deallocate
+ **/
+void inheritance_pattern_filter_free(filter_t *filter);
 
 
 /**
@@ -415,11 +541,14 @@ filter_t **sort_filter_chain(filter_chain *chain, int *num_filters);
  * 
  * @param input_records List of records to filter
  * @param[out] failed Records that failed the filter's test
+ * @param individuals List of individuals, used in case statistics based on pedigree are requested
+ * @param individuals_ids Relationship between the name of the individuals and their position in the VCF file
  * @param filters Filters to apply
  * @param num_filters Number of filters to apply
  * @return Records that passed the filters' tests
  */
-array_list_t *run_filter_chain(array_list_t *input_records, array_list_t *failed, filter_t **filters, int num_filters);
+array_list_t *run_filter_chain(array_list_t *input_records, array_list_t *failed, individual_t **individuals, 
+                               khash_t(ids) *individuals_ids, int num_variables, filter_t **filters, int num_filters);
 
 /**
  * @brief Deallocates memory allocated to store a filter chain
@@ -441,7 +570,7 @@ void free_filters(filter_t **filters, int num_filters);
 
 
 //====================================================================================
-//  Other functions
+//  Auxiliary
 //====================================================================================
 
 

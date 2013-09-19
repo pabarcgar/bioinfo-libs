@@ -44,6 +44,13 @@ vcf_record_t *vcf_record_copy(vcf_record_t *orig) {
     record->info_len = orig->info_len;
     record->format = strndup(orig->format, orig->format_len);
     record->format_len = orig->format_len;
+    
+    // Structural variation info
+    if (orig->sv) {
+        record->sv = orig->sv;
+    }
+    
+    // Samples
     record->samples = array_list_new(orig->samples->size + 1, 1.5, COLLECTION_MODE_ASYNCHRONIZED);
     for (int i = 0; i < orig->samples->size; i++) {
         array_list_insert(strdup(array_list_get(i, orig->samples)), record->samples);
@@ -70,6 +77,14 @@ void vcf_record_free_deep(vcf_record_t *record) {
     free(record);
 }
 
+void vcf_structural_variant_free(vcf_structural_variation_t *sv) {
+    if (sv) {
+        if (sv->src_chromosome) { free(sv->src_chromosome); }
+        if (sv->dest_chromosome) { free(sv->dest_chromosome); }
+        free(sv);
+    }
+}
+
 
 /* ********************************************************
  *           Addition of header and record entries        *
@@ -86,6 +101,133 @@ int add_vcf_sample_name(char *name, int length, vcf_file_t *file) {
     assert(file);
     return array_list_insert(strndup(name, length), file->samples_names);
 }
+
+static inline char* compose_structural_variant_key(vcf_structural_variation_t *sv) {
+    char *key = calloc(sv->src_chromosome_len + sv->dest_chromosome_len + 64, sizeof(char));
+    sprintf(key, "%.*s:%ld>%.*s:%ld", 
+            sv->src_chromosome_len, sv->src_chromosome, sv->src_position, 
+            sv->dest_chromosome_len, sv->dest_chromosome, sv->dest_position);
+    LOG_DEBUG_F("key = %s\n", key);
+    return key;
+}
+
+int add_structural_variant(vcf_record_t *record, vcf_file_t *file) {
+    vcf_structural_variation_t *sv;
+    char *key;
+    int ret = 0;
+    khiter_t iter;
+    
+    // Structural variation info
+    switch(record->type) {
+        case VARIANT_SNV:
+            ret = 1;
+            break;
+            
+        case VARIANT_INDEL:
+            sv = calloc (1, sizeof(vcf_structural_variation_t));
+            if (starts_with(record->alternate, "<INS")) {
+                sv->type = SV_INS;
+            } else if (starts_with(record->alternate, "<DEL")) {
+                sv->type = SV_DEL;
+            } else if (starts_with(record->alternate, "<DUP")) {
+                sv->type = SV_DUP;
+            } else if (starts_with(record->alternate, "<INV")) {
+                sv->type = SV_INV;
+            } else if (starts_with(record->alternate, "<CNV")) {
+                sv->type = SV_CNV;
+            }
+            sv->src_chromosome = strndup(record->chromosome, record->chromosome_len);
+            sv->src_chromosome_len = record->chromosome_len;
+            sv->src_position = record->position;
+            sv->dest_chromosome = strdup("0");
+            sv->dest_chromosome_len = 1;
+            sv->dest_position = 0;
+            
+            // If the variant was marked as INDEL, retrieve its length from the SVLEN field at INFO
+            char *aux_info = strndup(record->info, record->info_len);
+            char *svlen_text = get_field_value_in_info("SVLEN", aux_info);
+            if (svlen_text) {
+                sv->length = abs(atoi(svlen_text));
+                LOG_DEBUG_F("Structural variant INDEL %.*s of length %zu\n", record->alternate_len, record->alternate, sv->length);
+            }
+            free(aux_info);
+            
+            // Put structural variant into khash in vcf_file_t
+            key = compose_structural_variant_key(sv);
+            iter = kh_put(struct_variants, file->structural_variants, key, &ret);
+            if (ret) {
+                kh_value(file->structural_variants, iter) = sv;
+            } else {
+                LOG_ERROR_F("Structural variant from %.*s:%ld to %.*s:%ld could not be inserted\n", 
+                            sv->src_chromosome_len, sv->src_chromosome, sv->src_position, 
+                            sv->dest_chromosome_len, sv->dest_chromosome, sv->dest_position);
+            }
+            
+            // Let the record point to the same structural variant
+            record->sv = sv;
+            
+            LOG_DEBUG_F("Structural variant INDEL %.*s of type %d\n", record->alternate_len, record->alternate, record->sv->type, sv->length);
+            break;
+            
+        case VARIANT_SV:
+            sv = calloc (1, sizeof(vcf_structural_variation_t));
+            
+            char delim[2];
+            memset(delim, 0, 2 * sizeof(char));
+            // Split chromosome and position from a structure like "]1:1111]A"
+            if (record->alternate[0] == ']' || record->alternate[0] == '[') {
+                delim[0] = record->alternate[0];
+            } else if (record->alternate[record->alternate_len - 1] == ']' || record->alternate[record->alternate_len - 1] == '[') {
+                delim[0] = record->alternate[record->alternate_len - 1];
+            }
+            
+            int num_substrings, num_sub_substrings;
+            char *aux = strndup(record->alternate, record->alternate_len);
+            char **substrings = split(aux, delim, &num_substrings);
+            char **sub_substrings = split(substrings[1], ":", &num_sub_substrings);
+
+            sv->src_chromosome = strndup(record->chromosome, record->chromosome_len);
+            sv->src_chromosome_len = record->chromosome_len;
+            sv->src_position = record->position;
+            sv->dest_chromosome = sub_substrings[0];
+            sv->dest_chromosome_len = strlen(sub_substrings[0]);
+            sv->dest_position = atol(sub_substrings[1]);
+            sv->direction = (delim[0] == ']') ? SV_DIRECTION_LEFT : SV_DIRECTION_RIGHT;
+            sv->type = SV_TRANSLOC;
+            
+            free(sub_substrings[1]);
+            free(sub_substrings);
+            for (int i = 0; i < num_substrings; i++) {
+                free(substrings[i]);
+            }
+            free(substrings);
+            free(aux);
+
+            // Put structural variant into khash in vcf_file_t
+            key = compose_structural_variant_key(sv);
+            iter = kh_put(struct_variants, file->structural_variants, key, &ret);
+            if (ret) {
+                kh_value(file->structural_variants, iter) = sv;
+            } else {
+                LOG_ERROR_F("Structural variant from %.*s:%ld to %.*s:%ld could not be inserted\n", 
+                            sv->src_chromosome_len, sv->src_chromosome, sv->src_position, 
+                            sv->dest_chromosome_len, sv->dest_chromosome, sv->dest_position);
+            }
+            
+            // Let the record point to the same structural variant
+            record->sv = sv;
+            
+            LOG_DEBUG_F("SV with breakend %.*s:%ld ---> %.*s:%ld (dir %d)\n", 
+                        record->chromosome_len, record->chromosome, record->position, 
+                        record->sv->dest_chromosome_len, record->sv->dest_chromosome, record->sv->dest_position,
+                        record->sv->direction);
+            
+            break;
+    }
+    
+    return ret;
+}
+
 
 int add_text_batch(char *batch, vcf_file_t *file) {
     assert(batch);
@@ -295,6 +437,11 @@ void set_vcf_record_reference(char* reference, int length, vcf_record_t* record)
 //     LOG_DEBUG_F("set reference: %s\n", record->reference);
 }
 
+void set_vcf_record_type(enum variant_type type, vcf_record_t* record) {
+    assert(record);
+    record->type = type;
+}
+
 void set_vcf_record_alternate(char* alternate, int length, vcf_record_t* record) {
     assert(alternate);
     assert(record);
@@ -343,4 +490,108 @@ void add_vcf_record_sample(char* sample, int length, vcf_record_t* record) {
 //     } else {
 //         LOG_DEBUG_F("sample %s not inserted\n", sample);
 //     }
+}
+
+
+/* *******************
+ *      Sorting      *
+ * *******************/
+
+individual_t **sort_individuals(vcf_file_t *vcf, ped_file_t *ped) {
+    family_t *family;
+    family_t **families = (family_t**) cp_hashtable_get_values(ped->families);
+    int num_families = get_num_families(ped);
+
+    individual_t **individuals = calloc (get_num_vcf_samples(vcf), sizeof(individual_t*));
+    khash_t(ids) *positions = associate_samples_and_positions(vcf);
+    int pos = 0;
+
+    for (int f = 0; f < num_families; f++) {
+        family = families[f];
+        individual_t *father = family->father;
+        individual_t *mother = family->mother;
+
+        if (father != NULL) {
+            pos = 0;
+            LOG_DEBUG_F("father ID = %s\n", father->id);
+            khiter_t iter = kh_get(ids, positions, father->id);
+            if (iter != kh_end(positions)) {
+                pos = kh_value(positions, iter);
+                individuals[pos] = father;
+            }
+        }
+
+        if (mother != NULL) {
+            pos = 0;
+            LOG_DEBUG_F("mother ID = %s\n", mother->id);
+            khiter_t iter = kh_get(ids, positions, mother->id);
+            if (iter != kh_end(positions)) {
+                pos = kh_value(positions, iter);
+                individuals[pos] = mother;
+            }
+        }
+
+        linked_list_iterator_t *iterator = linked_list_iterator_new(family->children);
+        individual_t *child = NULL;
+        while (child = linked_list_iterator_curr(iterator)) {
+            pos = 0;
+            LOG_DEBUG_F("child ID = %s\n", child->id);
+            khiter_t iter = kh_get(ids, positions, child->id);
+            if (iter != kh_end(positions)) {
+                pos = kh_value(positions, iter);
+                individuals[pos] = child;
+            }
+            linked_list_iterator_next(iterator);
+        }
+        linked_list_iterator_free(iterator);
+        
+        iterator = linked_list_iterator_new(family->unknown);
+        individual_t *unknown = NULL;
+        while (unknown = linked_list_iterator_curr(iterator)) {
+            pos = 0;
+            LOG_DEBUG_F("unknown ID = %s\n", unknown->id);
+            khiter_t iter = kh_get(ids, positions, unknown->id);
+            if (iter != kh_end(positions)) {
+                pos = kh_value(positions, iter);
+                individuals[pos] = unknown;
+            }
+            linked_list_iterator_next(iterator);
+        }
+        linked_list_iterator_free(iterator);
+        
+        assert(father || mother || linked_list_size(family->unknown) > 0);
+    }
+
+    kh_destroy(ids, positions);
+    free(families);
+
+    return individuals;
+}
+
+khash_t(ids)* associate_samples_and_positions(vcf_file_t* file) {
+    LOG_DEBUG_F("** %zu sample names read\n", file->samples_names->size);
+    array_list_t *sample_names = file->samples_names;
+    khash_t(ids) *sample_ids = kh_init(ids);
+    
+    for (int i = 0; i < sample_names->size; i++) {
+        char *name = sample_names->items[i];
+        int ret;
+        khiter_t iter = kh_get(ids, sample_ids, name);
+        if (iter != kh_end(sample_ids)) {
+            LOG_FATAL_F("Sample %s appears more than once. File can not be analyzed.\n", name);
+        } else {
+            iter = kh_put(ids, sample_ids, name, &ret);
+            if (ret) {
+                kh_value(sample_ids, iter) = i;
+            }
+        }
+    }
+    
+//     char **keys = (char**) cp_hashtable_get_keys(sample_names);
+//     int num_keys = cp_hashtable_count(sample_names);
+//     for (int i = 0; i < num_keys; i++) {
+//         printf("%s\t%d\n", keys[i], *((int*) cp_hashtable_get(sample_ids, keys[i])));
+//     }
+    
+    return sample_ids;
 }
